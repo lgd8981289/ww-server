@@ -1,8 +1,14 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { DatabaseService } from './database.service';
 
 @Module({
+  imports: [
+    // 确保能注入 ConfigService（你在 AppModule 里已经把 ConfigModule 设为 global，这里写不写 imports 都可以，但写上更清晰）
+    ConfigModule,
+  ],
   providers: [
+    DatabaseService,
     {
       provide: 'DATABASE_CONNECTION',
       useFactory: (configService: ConfigService) => {
@@ -27,6 +33,9 @@ import { ConfigService } from '@nestjs/config';
       inject: [ConfigService],
     },
   ],
-  exports: ['DATABASE_CONNECTION'],
+  exports: [
+    'DATABASE_CONNECTION',
+    DatabaseService, // 关键：导出给其他模块使用
+  ],
 })
 export class DatabaseModule {}

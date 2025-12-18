@@ -12,6 +12,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './auth/jwt.strategy';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { configValidationSchema } from './config/config.schema';
 
 @Module({
   imports: [
@@ -20,7 +21,13 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
       signOptions: { expiresIn: '24h' },
     }),
     ConfigModule.forRoot({
-      isGlobal: true, // 全局模块，可以在任何地方使用
+      envFilePath: `.env.${process.env.NODE_ENV || 'development'}`,
+      isGlobal: true,
+      validationSchema: configValidationSchema,
+      validationOptions: {
+        allowUnknown: true,
+        abortEarly: true,
+      },
     }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
