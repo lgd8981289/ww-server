@@ -7,9 +7,6 @@ import {
   Body,
   Param,
   ParseIntPipe,
-  HttpCode,
-  HttpStatus,
-  NotFoundException,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import type { User } from './user.service';
@@ -25,15 +22,10 @@ export class UserController {
 
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number): User {
-    const user = this.userService.findOne(id);
-    if (!user) {
-      throw new NotFoundException(`用户 ID ${id} 不存在`);
-    }
-    return user;
+    return this.userService.findOne(id);
   }
 
   @Post()
-  @HttpCode(HttpStatus.CREATED)
   create(@Body() createUserDto: { name: string; email: string }): User {
     return this.userService.create(createUserDto);
   }
@@ -43,19 +35,11 @@ export class UserController {
     @Param('id', ParseIntPipe) id: number,
     @Body() updateUserDto: { name?: string; email?: string },
   ): User {
-    const user = this.userService.update(id, updateUserDto);
-    if (!user) {
-      throw new NotFoundException(`用户 ID ${id} 不存在`);
-    }
-    return user;
+    return this.userService.update(id, updateUserDto);
   }
 
   @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id', ParseIntPipe) id: number): void {
-    const success = this.userService.remove(id);
-    if (!success) {
-      throw new NotFoundException(`用户 ID ${id} 不存在`);
-    }
+    return this.userService.remove(id);
   }
 }

@@ -1,51 +1,74 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 export interface User {
   id: number;
   name: string;
   email: string;
+  createdAt: Date;
 }
 
 @Injectable()
 export class UserService {
   private users: User[] = [
-    { id: 1, name: '张三', email: 'zhangsan@example.com' },
-    { id: 2, name: '李四', email: 'lisi@example.com' },
-    { id: 3, name: '王五', email: 'wangwu@example.com' },
+    {
+      id: 1,
+      name: '张三',
+      email: 'zhangsan@example.com',
+      createdAt: new Date('2024-01-01'),
+    },
+    {
+      id: 2,
+      name: '李四',
+      email: 'lisi@example.com',
+      createdAt: new Date('2024-01-02'),
+    },
+    {
+      id: 3,
+      name: '王五',
+      email: 'wangwu@example.com',
+      createdAt: new Date('2024-01-03'),
+    },
   ];
 
   findAll(): User[] {
     return this.users;
   }
 
-  findOne(id: number): User | undefined {
-    return this.users.find((user) => user.id === id);
+  findOne(id: number): User {
+    const user = this.users.find((user) => user.id === id);
+    if (!user) {
+      throw new NotFoundException(`用户 ID ${id} 不存在`);
+    }
+    return user;
   }
 
-  create(user: Omit<User, 'id'>): User {
+  create(userData: Omit<User, 'id' | 'createdAt'>): User {
     const newUser: User = {
-      id: this.users.length + 1,
-      ...user,
+      id: this.getNextId(),
+      ...userData,
+      createdAt: new Date(),
     };
     this.users.push(newUser);
     return newUser;
   }
 
-  update(id: number, user: Partial<Omit<User, 'id'>>): User | undefined {
-    const index = this.users.findIndex((u) => u.id === id);
-    if (index === -1) {
-      return undefined;
-    }
-    this.users[index] = { ...this.users[index], ...user };
-    return this.users[index];
+  update(id: number, userData: Partial<Omit<User, 'id' | 'createdAt'>>): User {
+    const user = this.findOne(id); // 复用 findOne，会自动处理不存在的情况
+    Object.assign(user, userData);
+    return user;
   }
 
-  remove(id: number): boolean {
-    const index = this.users.findIndex((u) => u.id === id);
+  remove(id: number): void {
+    const index = this.users.findIndex((user) => user.id === id);
     if (index === -1) {
-      return false;
+      throw new NotFoundException(`用户 ID ${id} 不存在`);
     }
     this.users.splice(index, 1);
-    return true;
+  }
+
+  private getNextId(): number {
+    return this.users.length > 0
+      ? Math.max(...this.users.map((u) => u.id)) + 1
+      : 1;
   }
 }
