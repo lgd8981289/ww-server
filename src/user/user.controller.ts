@@ -18,11 +18,12 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.guard';
+import { NotFoundException } from '@nestjs/common';
 
 @Controller('user')
 // 使用日志拦截器（控制器级别拦截器）
 @UseInterceptors(LoggingInterceptor)
-@UseGuards(JwtAuthGuard) // 所有路由都需要认证
+// @UseGuards(JwtAuthGuard) // 所有路由都需要认证
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
@@ -33,7 +34,15 @@ export class UserController {
 
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number): User {
+    if (id > 100) {
+      throw new NotFoundException(`用户 ID ${id} 不存在`);
+    }
     return this.userService.findOne(id);
+  }
+
+  @Get('error')
+  testError() {
+    throw new Error('这是一个测试错误');
   }
 
   @Post()
