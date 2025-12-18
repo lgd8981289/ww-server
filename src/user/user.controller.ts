@@ -12,6 +12,7 @@ import { UserService } from './user.service';
 import type { User } from './user.service';
 import { UseInterceptors } from '@nestjs/common';
 import { LoggingInterceptor } from '../common/interceptors/logging.interceptor';
+import { CreateUserDto } from './dto/create-user.dto';
 
 @Controller('user')
 // 使用日志拦截器（控制器级别拦截器）
@@ -30,7 +31,7 @@ export class UserController {
   }
 
   @Post()
-  create(@Body() createUserDto: { name: string; email: string }): User {
+  create(@Body() createUserDto: CreateUserDto): User {
     return this.userService.create(createUserDto);
   }
 

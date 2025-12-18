@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
+import { CreateUserDto } from './dto/create-user.dto';
 
 export interface User {
   id: number;
@@ -50,7 +51,7 @@ export class UserService {
     return user;
   }
 
-  create(userData: Omit<User, 'id' | 'createdAt'>): User {
+  create(userData: CreateUserDto): User {
     const newUser: User = {
       id: this.getNextId(),
       ...userData,
