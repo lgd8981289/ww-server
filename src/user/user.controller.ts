@@ -10,8 +10,12 @@ import {
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import type { User } from './user.service';
+import { UseInterceptors } from '@nestjs/common';
+import { LoggingInterceptor } from '../common/interceptors/logging.interceptor';
 
 @Controller('user')
+// 使用日志拦截器（控制器级别拦截器）
+@UseInterceptors(LoggingInterceptor)
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
