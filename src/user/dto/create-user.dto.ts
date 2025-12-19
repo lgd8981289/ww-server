@@ -15,7 +15,7 @@ export class CreateUserDto {
   @Matches(/^[a-zA-Z0-9_\u4e00-\u9fa5]+$/, {
     message: '用户名只能包含字母、数字、下划线和中文',
   })
-  name: string;
+  username: string;
 
   @IsEmail({}, { message: '邮箱格式不正确' })
   @IsNotEmpty({ message: '邮箱不能为空' })

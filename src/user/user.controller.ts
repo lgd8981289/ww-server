@@ -10,7 +10,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { UserService } from './user.service';
-import type { User } from './user.service';
+import { User } from './schemas/user.schema';
 import { UseInterceptors } from '@nestjs/common';
 import { LoggingInterceptor } from '../common/interceptors/logging.interceptor';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -28,16 +28,16 @@ export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get()
-  findAll(): User[] {
+  findAll(): Promise<User[]> {
     return this.userService.findAll();
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number): User {
+  findOne(@Param('id', ParseIntPipe) id: number): Promise<User | null> {
     if (id > 100) {
       throw new NotFoundException(`用户 ID ${id} 不存在`);
     }
-    return this.userService.findOne(id);
+    return this.userService.findOne(id.toString());
   }
 
   @Get('error')
@@ -46,7 +46,7 @@ export class UserController {
   }
 
   @Post()
-  create(@Body() createUserDto: CreateUserDto): User {
+  create(@Body() createUserDto: CreateUserDto): Promise<User> {
     return this.userService.create(createUserDto);
   }
 
@@ -54,13 +54,13 @@ export class UserController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateUserDto: { name?: string; email?: string },
-  ): User {
-    return this.userService.update(id, updateUserDto);
+  ): Promise<User | null> {
+    return this.userService.update(id.toString(), updateUserDto);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number): void {
-    return this.userService.remove(id);
+  remove(@Param('id', ParseIntPipe) id: number): Promise<User | null> {
+    return this.userService.delete(id.toString());
   }
 
   @Get('info')
