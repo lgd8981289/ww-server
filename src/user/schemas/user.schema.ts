@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import * as bcrypt from 'bcryptjs';
 
 @Schema({ _id: false })
 export class Profile {
@@ -93,3 +94,41 @@ UserSchema.virtual('isActive').get(function () {
 // 创建索引
 UserSchema.index({ username: 1, email: 1 });
 UserSchema.index({ status: 1 });
+
+// Pre save 钩子：加密密码
+UserSchema.pre('save', async function (next: (err?: Error) => void) {
+  if (!this.isModified('password')) {
+    return next();
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error as Error);
+  }
+});
+
+// Post save 钩子：记录日志
+UserSchema.post('save', function () {
+  console.log(`用户 ${this.username} 已保存`);
+});
+
+// Pre findOneAndUpdate 钩子：自动更新时间戳
+UserSchema.pre('findOneAndUpdate', function (next: (err?: Error) => void) {
+  this.set({ updatedAt: new Date() });
+  next();
+});
+
+// 添加方法：比对密码
+UserSchema.methods.comparePassword = async function (password: string) {
+  return bcrypt.compare(password, this.password);
+};
+
+// 添加方法：隐藏敏感字段
+UserSchema.methods.toJSON = function () {
+  const obj = this.toObject();
+  delete obj.password; // 不返回密码
+  return obj;
+};
