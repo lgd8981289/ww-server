@@ -1,6 +1,6 @@
 import { Controller } from '@nestjs/common';
 
-@Controller('interview')
-export class InterviewController {
+@Controller('sts')
+export class StsController {
   constructor() {}
 }
