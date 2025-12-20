@@ -11,6 +11,11 @@ import {
   ConsumptionRecord,
   ConsumptionRecordDocument,
 } from '../interview/schemas/consumption-record.schema';
+import {
+  UserConsumption,
+  UserConsumptionDocument,
+} from './schemas/consumption-record.schema';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UserService {
@@ -18,6 +23,8 @@ export class UserService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(ConsumptionRecord.name)
     private consumptionRecordModel: Model<ConsumptionRecordDocument>,
+    @InjectModel(UserConsumption.name)
+    private consumptionModel: Model<UserConsumptionDocument>,
     private jwtService: JwtService,
   ) {}
 
@@ -86,14 +93,60 @@ export class UserService {
    * 获取用户信息
    */
   async getUserInfo(userId: string) {
-    const user = await this.userModel.findById(userId);
+    const user = await this.userModel.findById(userId).lean();
     if (!user) {
       throw new NotFoundException('用户不存在');
     }
-    const userInfo = user.toObject();
     // 不返回密码
-    delete userInfo.password;
-    return userInfo;
+    delete user.password;
+
+    return user;
+  }
+
+  async updateUser(userId: string, updateUserDto: UpdateUserDto) {
+    // 如果更新邮箱，检查邮箱是否已被使用
+    if (updateUserDto.email) {
+      const existingUser = await this.userModel.findOne({
+        email: updateUserDto.email,
+        _id: { $ne: userId }, // 排除当前用户
+      });
+
+      if (existingUser) {
+        throw new BadRequestException('邮箱已被使用');
+      }
+    }
+
+    const user = await this.userModel.findByIdAndUpdate(userId, updateUserDto, {
+      new: true,
+    });
+
+    if (!user) {
+      throw new NotFoundException('用户不存在');
+    }
+
+    delete user.password;
+    return user;
+  }
+
+  /**
+   * 创建消费记录
+   */
+  async createConsumptionRecord(
+    userId: string,
+    type: string,
+    quantity: number = 1,
+    source: string = 'free',
+    relatedId?: string,
+  ) {
+    const record = new this.consumptionModel({
+      userId,
+      type,
+      quantity,
+      source,
+      relatedId,
+    });
+
+    return await record.save();
   }
 
   /**
