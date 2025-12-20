@@ -2,6 +2,7 @@ import { Controller, Post, Body } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
 import { ResponseUtil } from '../common/utils/response.util';
+import { LoginDto } from './dto/login.dto';
 
 @Controller('user')
 export class UserController {
@@ -11,5 +12,11 @@ export class UserController {
   async register(@Body() registerDto: RegisterDto) {
     const result = await this.userService.register(registerDto);
     return ResponseUtil.success(result, '注册成功');
+  }
+
+  @Post('login')
+  async login(@Body() loginDto: LoginDto) {
+    const result = await this.userService.login(loginDto);
+    return ResponseUtil.success(result, '登录成功');
   }
 }
