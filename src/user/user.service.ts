@@ -7,11 +7,17 @@ import { JwtService } from '@nestjs/jwt';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { NotFoundException } from '@nestjs/common';
+import {
+  ConsumptionRecord,
+  ConsumptionRecordDocument,
+} from '../interview/schemas/consumption-record.schema';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(ConsumptionRecord.name)
+    private consumptionRecordModel: Model<ConsumptionRecordDocument>,
     private jwtService: JwtService,
   ) {}
 
@@ -88,5 +94,53 @@ export class UserService {
     // 不返回密码
     delete userInfo.password;
     return userInfo;
+  }
+
+  /**
+   * 获取用户消费记录
+   * @param userId - 用户的唯一标识
+   * @param options - 可选的查询参数，包括跳过的记录数和限制的记录数
+   * @returns - 返回用户的消费记录和消费统计数据
+   */
+  async getUserConsumptionRecords(
+    userId: string, // 用户ID，用于标识和查询特定用户的消费记录
+    options?: { skip: number; limit: number }, // 查询选项，包含跳过记录的数量和每次查询的记录数量
+  ) {
+    // 如果没有传递查询选项，则默认跳过0条记录，并限制返回20条记录
+    const skip = options?.skip || 0; // 从第skip条记录开始
+    const limit = options?.limit || 20; // 限制返回的记录数量，默认是20
+
+    // 查询消费记录，按创建时间降序排列，跳过skip条记录，限制返回limit条记录
+    const records = await this.consumptionRecordModel
+      .find({ userId }) // 根据用户ID查询消费记录
+      .sort({ createdAt: -1 }) // 按照创建时间降序排列，最新的记录排在前面
+      .skip(skip) // 跳过指定数量的记录
+      .limit(limit) // 限制返回的记录数量
+      .lean(); // 使用lean()优化查询结果，返回普通的JavaScript对象而不是Mongoose文档
+
+    // 统计用户各类型的消费信息，使用MongoDB的聚合框架
+    const stats = await this.consumptionRecordModel.aggregate([
+      { $match: { userId } }, // 过滤出属于当前用户的消费记录
+      {
+        $group: {
+          // 按照消费类型进行分组
+          _id: '$type', // 按消费类型进行分组
+          count: { $sum: 1 }, // 统计每种类型的消费记录数量
+          successCount: {
+            $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] }, // 统计状态为'success'的记录数
+          },
+          failedCount: {
+            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }, // 统计状态为'failed'的记录数
+          },
+          totalCost: { $sum: '$estimatedCost' }, // 计算每种类型的消费总额
+        },
+      },
+    ]);
+
+    // 返回查询的消费记录和消费统计信息
+    return {
+      records, // 用户的消费记录
+      stats, // 按消费类型分组后的统计信息
+    };
   }
 }

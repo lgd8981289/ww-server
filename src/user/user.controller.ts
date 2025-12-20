@@ -11,8 +11,8 @@ import { RegisterDto } from './dto/register.dto';
 import { ResponseUtil } from '../common/utils/response.util';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { JwtStrategy } from '../auth/jwt.strategy';
 import { Public } from '../auth/public.decorator';
+import { ApiOperation } from '@nestjs/swagger';
 
 @Controller('user')
 @UseGuards(JwtAuthGuard) // 使用认证守卫
@@ -38,5 +38,19 @@ export class UserController {
     const { userId } = req.user;
     const userInfo = await this.userService.getUserInfo(userId);
     return ResponseUtil.success(userInfo, '获取成功');
+  }
+
+  /**
+   * 获取用户消费记录（包括简历押题、专项面试、综合面试）
+   */
+  @Get('consumption-records')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: '获取用户消费记录',
+    description:
+      '获取用户所有的功能消费记录，包括简历押题、专项面试、综合面试等',
+  })
+  async getUserConsumptionRecords(@Request() req: any) {
+    return this.userService.getUserConsumptionRecords(req.user.userId);
   }
 }
