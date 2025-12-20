@@ -6,6 +6,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { NotFoundException } from '@nestjs/common';
 
 @Injectable()
 export class UserService {
@@ -73,5 +74,19 @@ export class UserService {
       token,
       user: userInfo,
     };
+  }
+
+  /**
+   * 获取用户信息
+   */
+  async getUserInfo(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('用户不存在');
+    }
+    const userInfo = user.toObject();
+    // 不返回密码
+    delete userInfo.password;
+    return userInfo;
   }
 }
