@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-import * as bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 export type UserDocument = User & Document;
 
@@ -113,7 +113,9 @@ UserSchema.pre('save', async function () {
   }
 
   const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+  if (this.password) {
+    this.password = await bcrypt.hash(this.password, salt);
+  }
 });
 
 // 添加比较密码的方法
