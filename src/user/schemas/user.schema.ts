@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import * as bcrypt from 'bcrypt';
 
 export type UserDocument = User & Document;
 
@@ -28,7 +29,7 @@ export class User {
   isActive: boolean; // 账号是否激活
 
   @Prop()
-  password: string;
+  password?: string;
 
   // 用户个人信息
   @Prop()
@@ -104,3 +105,20 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// 保存前加密密码
+UserSchema.pre('save', async function () {
+  if (!this.isModified('password')) {
+    return;
+  }
+
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+});
+
+// 添加比较密码的方法
+UserSchema.methods.comparePassword = async function (
+  candidatePassword: string,
+) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
