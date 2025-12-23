@@ -7,9 +7,11 @@ import {
   Res,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { InterviewService } from './services/interview.service';
 
 @Controller('interview')
 export class InterviewController {
+  constructor(private readonly interviewService: InterviewService) {}
   // 接口 1：简历押题
   @Post('resume/quiz/stream')
   @UseGuards(JwtAuthGuard)
@@ -29,4 +31,19 @@ export class InterviewController {
   @Post('mock/end')
   @UseGuards(JwtAuthGuard)
   async endMockInterview(@Body() data, @Request() req) {}
+
+  @Post('/analyze-resume')
+  async analyzeResume(
+    @Body() body: { resume: string; jobDescription: string },
+  ) {
+    const result = await this.interviewService.analyzeResume(
+      body.resume,
+      body.jobDescription,
+    );
+
+    return {
+      code: 200,
+      data: result,
+    };
+  }
 }
