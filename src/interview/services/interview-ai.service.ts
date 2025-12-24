@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { buildMockInterviewPrompt } from '../prompts/mock-interview.prompts';
+import { PromptTemplate } from '@langchain/core/prompts';
+import { ChatDeepSeek } from '@langchain/deepseek';
 
 /**
  * 面试 AI 服务
@@ -8,8 +11,26 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class InterviewAIService {
   private readonly logger = new Logger(InterviewAIService.name);
-
-  constructor(private readonly configService: ConfigService) {}
+  // 大模型
+  private model: ChatDeepSeek;
+  constructor(private readonly configService: ConfigService) {
+    const apiKey = this.configService.get<string>('DEEPSEEK_API_KEY');
+    if (!apiKey) {
+      this.logger.warn(
+        'DEEPSEEK_API_KEY not configured, AI service will not work',
+      );
+    }
+    // deepseek-reasoner ：思考模式（慢，适合需要深度推理的任务，如数学、逻辑题）
+    // deepseek-chat	： 非思考模式（快，适合内容生成任务，如面试问题、文案创作）
+    // ⚠️ 对于生成面试问题，使用 deepseek-chat 更快（10-30秒），reasoner 会超时（5-10分钟）
+    this.model = new ChatDeepSeek({
+      apiKey: apiKey || 'dummy-key',
+      model:
+        this.configService.get<string>('DEEPSEEK_MODEL') || 'deepseek-chat',
+      temperature: 0.7,
+      maxTokens: Number(this.configService.get<string>('MAX_TOKENS')) || 4000,
+    });
+  }
 
   /**
    * 流式生成面试开场白（模拟打字机效果）
@@ -67,5 +88,145 @@ export class InterviewAIService {
       '首先，请你简单介绍一下自己。自我介绍可以说明你的学历以及专业背景、工作经历以及取得的成绩等。';
 
     return greeting;
+  }
+
+  /**
+   * 流式生成面试问题（真正的流式响应）
+   * @param context 面试上下文
+   * @returns AsyncGenerator 流式返回内容片段
+   */
+  async *generateInterviewQuestionStream(context: {
+    interviewType: 'special' | 'comprehensive';
+    resumeContent: string;
+    company?: string;
+    positionName?: string;
+    jd?: string;
+    conversationHistory: Array<{
+      role: 'interviewer' | 'candidate';
+      content: string;
+    }>;
+    elapsedMinutes: number;
+    targetDuration: number;
+  }): AsyncGenerator<
+    string,
+    {
+      question: string;
+      shouldEnd: boolean;
+      standardAnswer?: string;
+      reasoning?: string;
+    },
+    undefined
+  > {
+    try {
+      const prompt = buildMockInterviewPrompt(context);
+      const promptTemplate = PromptTemplate.fromTemplate(prompt);
+      const chain = promptTemplate.pipe(this.model);
+
+      this.logger.log(
+        `🤖 开始流式生成面试问题: type=${context.interviewType}, elapsed=${context.elapsedMinutes}min`,
+      );
+
+      let fullContent = '';
+      const startTime = Date.now();
+
+      // 使用 stream() 进行流式生成
+      const stream = await chain.stream({
+        interviewType: context.interviewType,
+        resumeContent: context.resumeContent,
+        company: context.company || '',
+        positionName: context.positionName || '未提供',
+        jd: context.jd || '未提供',
+        conversationHistory: this.formatConversationHistory(
+          context.conversationHistory,
+        ),
+        elapsedMinutes: context.elapsedMinutes,
+        targetDuration: context.targetDuration,
+      });
+
+      // 逐块返回内容
+      for await (const chunk of stream) {
+        const content = chunk.content?.toString() || '';
+        if (content) {
+          fullContent += content;
+          yield content; // 立即返回给调用方
+        }
+      }
+
+      const duration = Date.now() - startTime;
+      this.logger.log(
+        `✅ 流式生成完成: 耗时=${duration}ms, 长度=${fullContent.length}`,
+      );
+
+      // 返回最终解析结果
+      return this.parseInterviewResponse(fullContent, context);
+    } catch (error) {
+      this.logger.error(
+        `❌ 流式生成面试问题失败: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 格式化对话历史
+   */
+  private formatConversationHistory(
+    history: Array<{ role: 'interviewer' | 'candidate'; content: string }>,
+  ): string {
+    if (!history || history.length === 0) {
+      return '（对话刚开始，这是候选人的自我介绍）';
+    }
+
+    return history
+      .map((item, index) => {
+        const role = item.role === 'interviewer' ? '面试官' : '候选人';
+        return `${index + 1}. ${role}: ${item.content}`;
+      })
+      .join('\n\n');
+  }
+
+  /**
+   * 解析AI的面试回应
+   */
+  private parseInterviewResponse(
+    content: string,
+    context: {
+      elapsedMinutes: number;
+      targetDuration: number;
+    },
+  ): {
+    question: string;
+    shouldEnd: boolean;
+    standardAnswer?: string;
+    reasoning?: string;
+  } {
+    // 检查是否包含结束标记
+    const shouldEnd = content.includes('[END_INTERVIEW]');
+
+    // 提取标准答案
+    let standardAnswer: string | undefined;
+    let questionContent = content;
+
+    const standardAnswerMatch = content.match(
+      /\[STANDARD_ANSWER\]([\s\S]*?)(?=\[END_INTERVIEW\]|$)/,
+    );
+    if (standardAnswerMatch) {
+      standardAnswer = standardAnswerMatch[1].trim();
+      // 移除标准答案部分，只保留问题
+      questionContent = content.split('[STANDARD_ANSWER]')[0].trim();
+    }
+
+    // 移除结束标记
+    questionContent = questionContent.replace(/\[END_INTERVIEW\]/g, '').trim();
+
+    return {
+      question: questionContent,
+      shouldEnd: shouldEnd,
+      standardAnswer: standardAnswer,
+      reasoning: shouldEnd
+        ? `面试已达到目标时长（${context.elapsedMinutes}/${context.targetDuration}分钟）`
+        : undefined,
+    };
   }
 }
