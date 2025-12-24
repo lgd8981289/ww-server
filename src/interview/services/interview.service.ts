@@ -3,7 +3,10 @@ import { JsonOutputParser } from '@langchain/core/output_parsers';
 import { ChatDeepSeek } from '@langchain/deepseek';
 import { ConfigService } from '@nestjs/config';
 import { Injectable, Logger } from '@nestjs/common';
-import { RESUME_QUIZ_PROMPT } from '../prompts/resume-quiz.prompts';
+import {
+  RESUME_QUIZ_PROMPT,
+  RESUME_QUIZ_PROMPT2,
+} from '../prompts/resume-quiz.prompts';
 
 @Injectable()
 export class InterviewService {
@@ -34,7 +37,7 @@ export class InterviewService {
 
   async analyzeResume(resumeContent: string, jobDescription: string) {
     // 创建 Prompt 模板
-    const prompt = PromptTemplate.fromTemplate(RESUME_QUIZ_PROMPT);
+    const prompt = PromptTemplate.fromTemplate(RESUME_QUIZ_PROMPT2);
 
     // 创建输出解析器
     const parser = new JsonOutputParser();
@@ -53,6 +56,52 @@ export class InterviewService {
     } catch (error) {
       console.error('简历分析失败:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 生成简历押题
+   */
+  async generateResumeQuiz(input: {
+    position: string;
+    years: number;
+    skills: string;
+    recent_projects: string;
+    job_description: string;
+    education: string;
+    question_count?: number;
+  }) {
+    try {
+      const questionCount = input.question_count || 10;
+
+      // 创建 Prompt 模板
+      const prompt = PromptTemplate.fromTemplate(RESUME_QUIZ_PROMPT);
+
+      // 创建输出解析器
+      const parser = new JsonOutputParser();
+
+      // 创建链
+      const chain = prompt.pipe(this.model).pipe(parser);
+
+      // 调用链
+      this.logger.debug(
+        `准备为 ${input.position} 生成 ${questionCount} 道押题`,
+      );
+
+      const result = await chain.invoke({
+        position: input.position,
+        years: input.years,
+        skills: input.skills,
+        recent_projects: input.recent_projects,
+        job_description: input.job_description,
+        education: input.education,
+        question_count: questionCount,
+      });
+
+      return result;
+    } catch (error) {
+      this.logger.error('无法生成简历押题数据', error);
+      throw new Error('无法生成简历押题数据: ' + error.message);
     }
   }
 }

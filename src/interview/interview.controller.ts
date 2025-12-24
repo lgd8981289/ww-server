@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InterviewService } from './services/interview.service';
+import type { Response } from 'express';
 
 @Controller('interview')
 export class InterviewController {
@@ -44,6 +45,31 @@ export class InterviewController {
     return {
       code: 200,
       data: result,
+    };
+  }
+
+  /**
+   * 生成简历押题
+   */
+  @Post('/generate-quiz')
+  async generateQuiz(
+    @Body()
+    body: {
+      position: string;
+      years: number;
+      skills: string;
+      recent_projects: string;
+      job_description: string;
+      education: string;
+      question_count?: number;
+    },
+  ) {
+    const questions = await this.interviewService.generateResumeQuiz(body);
+
+    return {
+      code: 200,
+      message: '简历押题生成成功',
+      data: questions,
     };
   }
 }
