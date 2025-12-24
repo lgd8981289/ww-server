@@ -9,29 +9,11 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InterviewService } from './services/interview.service';
 import type { Response } from 'express';
+import { StartMockInterviewDto } from './dto/mock-interview.dto';
 
 @Controller('interview')
 export class InterviewController {
   constructor(private readonly interviewService: InterviewService) {}
-  // 接口 1：简历押题
-  @Post('resume/quiz/stream')
-  @UseGuards(JwtAuthGuard)
-  async resumeQuizStream(@Body() dto, @Request() req, @Res() res) {}
-
-  // 接口 2：开始模拟面试
-  @Post('mock/start')
-  @UseGuards(JwtAuthGuard)
-  async startMockInterview(@Body() dto, @Request() req) {}
-
-  // 接口 3：回答面试问题
-  @Post('mock/answer')
-  @UseGuards(JwtAuthGuard)
-  async answerMockInterview(@Body() dto, @Request() req) {}
-
-  // 接口 4：结束面试
-  @Post('mock/end')
-  @UseGuards(JwtAuthGuard)
-  async endMockInterview(@Body() data, @Request() req) {}
 
   @Post('/analyze-resume')
   async analyzeResume(
@@ -71,5 +53,66 @@ export class InterviewController {
       message: '简历押题生成成功',
       data: questions,
     };
+  }
+
+  /**
+   * 开始模拟面试 - SSE流式响应
+   */
+  @Post('mock/start')
+  @UseGuards(JwtAuthGuard)
+  async startMockInterview(
+    @Body() dto: StartMockInterviewDto,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    const userId = req.user.userId;
+
+    // 设置 SSE 响应头
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // 禁用 Nginx 缓冲
+    res.setHeader('Access-Control-Allow-Origin', '*'); // 如果需要CORS
+
+    // 发送初始注释，保持连接活跃
+    res.write(': connected\n\n');
+    // flush 数据（如果可用）
+    if (typeof (res as any).flush === 'function') {
+      (res as any).flush();
+    }
+
+    // 订阅进度事件
+    const subscription = this.interviewService
+      .startMockInterviewWithStream(userId, dto)
+      .subscribe({
+        next: (event) => {
+          res.write(`data: ${JSON.stringify(event)}\n\n`);
+          // flush 数据（如果可用）
+          if (typeof (res as any).flush === 'function') {
+            (res as any).flush();
+          }
+        },
+        error: (error) => {
+          res.write(
+            `data: ${JSON.stringify({
+              type: 'error',
+              error: error.message,
+            })}\n\n`,
+          );
+          if (typeof (res as any).flush === 'function') {
+            (res as any).flush();
+          }
+          res.end();
+        },
+        complete: () => {
+          res.end();
+        },
+      });
+
+    // 客户端断开连接时取消订阅
+    req.on('close', () => {
+      subscription.unsubscribe();
+    });
   }
 }
