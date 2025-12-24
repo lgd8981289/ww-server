@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { buildMockInterviewPrompt } from '../prompts/mock-interview.prompts';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { ChatDeepSeek } from '@langchain/deepseek';
+import { buildAssessmentPrompt } from '../dto/mock-interview.dto';
+import { JsonOutputParser } from '@langchain/core/output_parsers';
 
 /**
  * 面试 AI 服务
@@ -228,5 +230,101 @@ export class InterviewAIService {
         ? `面试已达到目标时长（${context.elapsedMinutes}/${context.targetDuration}分钟）`
         : undefined,
     };
+  }
+
+  /**
+   * 生成面试评估报告
+   * 基于用户的回答分析生成完整的评估报告
+   */
+  async generateInterviewAssessmentReport(context: {
+    interviewType: 'special' | 'comprehensive';
+    company?: string;
+    positionName?: string;
+    jd?: string;
+    resumeContent: string;
+    qaList: Array<{
+      question: string;
+      answer: string;
+      standardAnswer?: string;
+    }>;
+    answerQualityMetrics?: {
+      totalQuestions: number;
+      avgAnswerLength: number;
+      emptyAnswersCount: number;
+    };
+  }): Promise<{
+    overallScore: number;
+    overallLevel: string;
+    overallComment: string;
+    radarData: Array<{
+      dimension: string;
+      score: number;
+      description?: string;
+    }>;
+    strengths: string[];
+    weaknesses: string[];
+    improvements: Array<{
+      category: string;
+      suggestion: string;
+      priority: 'high' | 'medium' | 'low';
+    }>;
+    fluencyScore: number;
+    logicScore: number;
+    professionalScore: number;
+  }> {
+    try {
+      const prompt = buildAssessmentPrompt(context);
+      const promptTemplate = PromptTemplate.fromTemplate(prompt);
+      const chain = promptTemplate.pipe(this.model);
+
+      this.logger.log(
+        `🤖 开始生成面试评估报告: type=${context.interviewType}, qaCount=${context.qaList.length}`,
+      );
+
+      const startTime = Date.now();
+
+      // 使用 JSON 输出解析器
+      const parser = new JsonOutputParser();
+      const chainWithParser = promptTemplate.pipe(this.model).pipe(parser);
+
+      const result: any = await chainWithParser.invoke({
+        interviewType: context.interviewType,
+        company: context.company || '',
+        positionName: context.positionName || '未提供',
+        jd: context.jd || '未提供',
+        resumeContent: context.resumeContent,
+        qaList: context.qaList
+          .map(
+            (qa, index) =>
+              `问题${index + 1}: ${qa.question}\n用户回答: ${qa.answer}\n回答长度: ${qa.answer.length}字\n标准答案: ${qa.standardAnswer || '无'}`,
+          )
+          .join('\n\n'),
+        totalQuestions: context.qaList.length,
+        qualityMetrics: context.answerQualityMetrics
+          ? `\n## 回答质量统计\n- 总问题数: ${context.answerQualityMetrics.totalQuestions}\n- 平均回答长度: ${context.answerQualityMetrics.avgAnswerLength}字\n- 无效回答数: ${context.answerQualityMetrics.emptyAnswersCount}`
+          : '',
+      });
+
+      const duration = Date.now() - startTime;
+      this.logger.log(
+        `✅ 评估报告生成完成: 耗时=${duration}ms, overallScore=${result.overallScore}`,
+      );
+
+      return {
+        overallScore: result.overallScore || 75,
+        overallLevel: result.overallLevel || '良好',
+        overallComment: result.overallComment || '面试表现良好',
+        radarData: result.radarData || [],
+        strengths: result.strengths || [],
+        weaknesses: result.weaknesses || [],
+        improvements: result.improvements || [],
+        fluencyScore: result.fluencyScore || 80,
+        logicScore: result.logicScore || 80,
+        professionalScore: result.professionalScore || 80,
+      };
+    } catch (error) {
+      this.logger.error(`❌ 生成评估报告失败: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 }

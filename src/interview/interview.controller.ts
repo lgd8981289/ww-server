@@ -5,6 +5,8 @@ import {
   Body,
   Request,
   Res,
+  Param,
+  Get,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InterviewService } from './services/interview.service';
@@ -178,5 +180,48 @@ export class InterviewController {
     req.on('close', () => {
       subscription.unsubscribe();
     });
+  }
+
+  /**
+   * 结束面试（用户主动结束）
+   * resultId 在 开始面试 接口中获取
+   */
+  @Post('mock/end')
+  @UseGuards(JwtAuthGuard)
+  async endMockInterview(
+    @Body() body: { resultId: string },
+    @Request() req: any,
+  ) {
+    await this.interviewService.endMockInterview(
+      req.user.userId,
+      body.resultId,
+    );
+
+    return {
+      code: 200,
+      message: '面试已结束，正在生成分析报告',
+    };
+  }
+
+  /**
+   * 获取分析报告
+   * 统一接口，根据 resultId 自动识别类型（简历押题/专项面试/综合面试）
+   */
+  @Get('analysis/report/:resultId')
+  @UseGuards(JwtAuthGuard)
+  async getAnalysisReport(
+    @Param('resultId') resultId: string,
+    @Request() req: any,
+  ) {
+    const report = await this.interviewService.getAnalysisReport(
+      req.user.userId,
+      resultId,
+    );
+
+    return {
+      code: 200,
+      message: '查询成功',
+      data: report,
+    };
   }
 }

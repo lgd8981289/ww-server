@@ -1081,4 +1081,272 @@ export class InterviewService {
       );
     }
   }
+
+  /**
+   * 结束面试（用户主动结束）
+   * 使用 resultId（持久化）查询
+   */
+  async endMockInterview(userId: string, resultId: string): Promise<void> {
+    // 1. 从数据库查询面试记录
+    const dbResult = await this.aiInterviewResultModel.findOne({
+      resultId,
+      userId,
+    });
+
+    if (!dbResult) {
+      throw new NotFoundException('面试记录不存在');
+    }
+
+    if (dbResult.status === 'completed') {
+      throw new BadRequestException('面试已经结束');
+    }
+
+    // 2. 从 sessionState 恢复会话
+    let session: InterviewSession;
+
+    if (dbResult.sessionState) {
+      session = dbResult.sessionState as InterviewSession;
+    } else {
+      throw new NotFoundException('无法加载面试状态');
+    }
+
+    // 3. 标记为已结束
+    session.isActive = false;
+
+    // 4. 添加面试结束语
+    const closingStatement = `感谢您今天的面试表现。由于时间关系，我们今天的面试就到这里。您的回答让我们对您有了较为全面的了解，后续我们会进行综合评估，有结果会及时通知您。祝您生活愉快！`;
+
+    session.conversationHistory.push({
+      role: 'interviewer',
+      content: closingStatement,
+      timestamp: new Date(),
+    });
+
+    // 5. 保存结果
+    await this.saveMockInterviewResult(session);
+
+    // 6. 异步生成评估报告（不阻塞返回）
+    this.generateAssessmentReportAsync(resultId, session).catch((error) => {
+      this.logger.error(
+        `❌ 异步生成评估报告失败: resultId=${resultId}, error=${error.message}`,
+        error.stack,
+      );
+    });
+
+    // 7. 从内存中清理会话（如果存在）
+    if (session.sessionId) {
+      this.interviewSessions.delete(session.sessionId);
+      this.logger.log(`🗑️ 会话已从内存清理: sessionId=${session.sessionId}`);
+    }
+  }
+
+  /**
+   * 异步生成评估报告
+   * 在面试结束后后台静默生成，不阻塞接口返回
+   */
+  private async generateAssessmentReportAsync(
+    resultId: string,
+    session: InterviewSession,
+  ): Promise<void> {
+    try {
+      // 从 conversationHistory 中提取问答对
+      const qaList: Array<{
+        question: string;
+        answer: string;
+        standardAnswer?: string;
+      }> = [];
+
+      for (let i = 0; i < session.conversationHistory.length; i++) {
+        const current = session.conversationHistory[i];
+        if (
+          current.role === 'interviewer' &&
+          i + 1 < session.conversationHistory.length
+        ) {
+          const next = session.conversationHistory[i + 1];
+          if (next.role === 'candidate') {
+            // 过滤开场白和结束语
+            const isOpeningStatement = i === 0;
+            const isClosingStatement =
+              current.content.includes('今天的面试就到这里');
+
+            if (!isOpeningStatement && !isClosingStatement) {
+              qaList.push({
+                question: current.content,
+                answer: next.content,
+                standardAnswer: current.standardAnswer,
+              });
+            }
+          }
+        }
+      }
+
+      this.logger.log(
+        `🎯 开始异步生成评估报告: resultId=${resultId}, qaCount=${qaList.length}`,
+      );
+
+      // 数据验证：检查是否有有效的问答对
+      if (qaList.length === 0) {
+        this.logger.warn(`⚠️ 没有有效的问答记录，生成默认低分报告`);
+
+        // 直接保存默认的低分评估，不调用 AI
+        await this.aiInterviewResultModel.findOneAndUpdate(
+          { resultId },
+          {
+            $set: {
+              overallScore: 30,
+              overallLevel: '需提升',
+              overallComment:
+                '本次面试未能有效进行，候选人没有回答任何问题，无法评估专业能力。建议重新安排面试。',
+              radarData: [
+                { dimension: '技术能力', score: 0, description: '未评估' },
+                { dimension: '项目经验', score: 0, description: '未评估' },
+                { dimension: '问题解决', score: 0, description: '未评估' },
+                { dimension: '学习能力', score: 0, description: '未评估' },
+                { dimension: '沟通表达', score: 0, description: '未评估' },
+              ],
+              strengths: [],
+              weaknesses: ['未参与面试问答', '无法评估专业能力'],
+              improvements: [
+                {
+                  category: '面试准备',
+                  suggestion: '建议充分准备后重新参加面试',
+                  priority: 'high',
+                },
+              ],
+              fluencyScore: 0,
+              logicScore: 0,
+              professionalScore: 0,
+              reportStatus: 'completed',
+              reportGeneratedAt: new Date(),
+            },
+          },
+        );
+
+        this.logger.log(`✅ 默认低分报告已生成: resultId=${resultId}`);
+        return;
+      }
+
+      // 计算回答质量指标
+      const totalAnswerLength = qaList.reduce(
+        (sum, qa) => sum + qa.answer.length,
+        0,
+      );
+      const avgAnswerLength = totalAnswerLength / qaList.length;
+      const emptyAnswers = qaList.filter(
+        (qa) => qa.answer.trim().length < 10,
+      ).length;
+
+      this.logger.log(
+        `📊 回答质量统计: 总问题=${qaList.length}, 平均回答长度=${Math.round(avgAnswerLength)}, 无效回答=${emptyAnswers}`,
+      );
+
+      // 更新状态为"生成中"
+      await this.aiInterviewResultModel.findOneAndUpdate(
+        { resultId },
+        { $set: { reportStatus: 'generating' } },
+      );
+
+      // 调用 AI 生成评估报告
+      const assessment = await this.aiService.generateInterviewAssessmentReport(
+        {
+          interviewType:
+            session.interviewType === MockInterviewType.SPECIAL
+              ? 'special'
+              : 'comprehensive',
+          company: session.company || '',
+          positionName: session.positionName,
+          jd: session.jd,
+          resumeContent: session.resumeContent,
+          qaList,
+          // 传递额外的质量指标供 AI 参考
+          answerQualityMetrics: {
+            totalQuestions: qaList.length,
+            avgAnswerLength: Math.round(avgAnswerLength),
+            emptyAnswersCount: emptyAnswers,
+          },
+        },
+      );
+
+      // 更新数据库中的评估数据
+      await this.aiInterviewResultModel.findOneAndUpdate(
+        { resultId },
+        {
+          $set: {
+            overallScore: assessment.overallScore,
+            overallLevel: assessment.overallLevel,
+            overallComment: assessment.overallComment,
+            radarData: assessment.radarData,
+            strengths: assessment.strengths,
+            weaknesses: assessment.weaknesses,
+            improvements: assessment.improvements,
+            fluencyScore: assessment.fluencyScore,
+            logicScore: assessment.logicScore,
+            professionalScore: assessment.professionalScore,
+            reportStatus: 'completed',
+            reportGeneratedAt: new Date(),
+          },
+        },
+      );
+
+      this.logger.log(
+        `✅ 评估报告生成成功: resultId=${resultId}, overallScore=${assessment.overallScore}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `❌ 评估报告生成失败: resultId=${resultId}, error=${error.message}`,
+        error.stack,
+      );
+
+      // 更新状态为"失败"
+      await this.aiInterviewResultModel.findOneAndUpdate(
+        { resultId },
+        {
+          $set: {
+            reportStatus: 'failed',
+            reportError: error.message,
+          },
+        },
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * 获取分析报告
+   * 根据结果ID自动识别类型并返回对应的分析报告
+   * 统一返回 ResumeQuizAnalysisDto 格式
+   * @param userId 用户ID
+   * @param resultId 结果ID
+   * @returns 分析报告
+   */
+  async getAnalysisReport(userId: string, resultId: string): Promise<any> {
+    // 简化下逻辑，只在AI面试结果中查找
+    const aiInterviewResult = await this.aiInterviewResultModel.findOne({
+      resultId,
+      userId,
+    });
+
+    if (aiInterviewResult) {
+      // 检查报告生成状态
+      const reportStatus = aiInterviewResult.reportStatus || 'pending';
+
+      if (reportStatus === 'pending' || reportStatus === 'generating') {
+        throw new BadRequestException(
+          '评估报告正在生成中，请稍后再试（预计1-2分钟）',
+        );
+      }
+
+      if (reportStatus === 'failed') {
+        throw new BadRequestException(
+          `评估报告生成失败: ${aiInterviewResult.reportError || '未知错误'}`,
+        );
+      }
+
+      // 报告已生成，转换为统一格式返回
+      return aiInterviewResult;
+    }
+
+    throw new NotFoundException('未找到该分析报告');
+  }
 }
