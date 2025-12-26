@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './user/user.module';
+import { CommonModule } from './common/common.module';
 import { InterviewModule } from './interview/interview.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
@@ -40,6 +41,7 @@ import { configValidationSchema } from './config/config.schema';
     }),
     UserModule,
     InterviewModule,
+    CommonModule,
   ],
   controllers: [AppController],
   providers: [
