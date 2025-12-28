@@ -19,10 +19,14 @@ export class InterviewController {
    * @returns
    */
   @Post('/analyze-resume')
+  @UseGuards(JwtAuthGuard)
   async analyzeResume(
-    @Body() body: { resume: string; jobDescription: string },
+    @Body() body: { position: string; resume: string; jobDescription: string },
+    @Request() req: any,
   ) {
     const result = await this.interviewService.analyzeResume(
+      req.user.userId,
+      body.position,
       body.resume,
       body.jobDescription,
     );
@@ -30,6 +34,28 @@ export class InterviewController {
     return {
       code: 200,
       data: result,
+    };
+  }
+
+  /**
+   * 8.4-对话历史和上下文管理
+   * @param body
+   * @returns
+   */
+  @Post('/continue-conversation')
+  async continueConversation(
+    @Body() body: { sessionId: string; question: string },
+  ) {
+    const result = await this.interviewService.continueConversation(
+      body.sessionId,
+      body.question,
+    );
+
+    return {
+      code: 200,
+      data: {
+        response: result,
+      },
     };
   }
 }

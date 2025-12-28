@@ -5,6 +5,8 @@ import { InterviewAIService } from './services/interview-ai.service';
 import { DocumentParserService } from './services/document-parser.service';
 import { ConfigModule } from '@nestjs/config';
 import { AIModule } from '../ai/ai.module';
+import { ResumeAnalysisService } from './services/resume-analysis.service';
+import { ConversationContinuationService } from './services/conversation-continuation.service';
 
 @Module({
   imports: [
@@ -13,7 +15,13 @@ import { AIModule } from '../ai/ai.module';
     // MongooseModule.forFeature([...]),
   ],
   controllers: [InterviewController],
-  providers: [InterviewService, InterviewAIService, DocumentParserService],
+  providers: [
+    InterviewService,
+    InterviewAIService,
+    DocumentParserService,
+    ResumeAnalysisService,
+    ConversationContinuationService,
+  ],
   exports: [InterviewService, InterviewAIService, DocumentParserService],
 })
 export class InterviewModule {}
