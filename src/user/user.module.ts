@@ -7,12 +7,17 @@ import {
   ConsumptionRecord,
   ConsumptionRecordSchema,
 } from '../interview/schemas/consumption-record.schema';
+import {
+  UserConsumption,
+  UserConsumptionSchema,
+} from './schemas/consumption-record.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: ConsumptionRecord.name, schema: ConsumptionRecordSchema },
+      { name: UserConsumption.name, schema: UserConsumptionSchema },
     ]),
   ], // 引入数据库模块
   controllers: [UserController],
