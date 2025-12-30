@@ -7,6 +7,20 @@ import { ConversationContinuationService } from './conversation-continuation.ser
 import { RESUME_ANALYSIS_SYSTEM_MESSAGE } from '../prompts/resume-analysis.prompts';
 import { Subject } from 'rxjs';
 import { ResumeQuizDto } from '../dto/resume-quiz.dto';
+import { v4 as uuidv4 } from 'uuid';
+import { ConsumptionStatus } from '../schemas/consumption-record.schema';
+import { BadRequestException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { User, UserDocument } from '../../user/schemas/user.schema';
+import { Model, Types } from 'mongoose';
+import {
+  ConsumptionRecord,
+  ConsumptionRecordDocument,
+} from '../schemas/consumption-record.schema';
+import {
+  ResumeQuizResult,
+  ResumeQuizResultDocument,
+} from '../schemas/interview-quiz-result.schema';
 
 /**
  * 进度事件
@@ -20,6 +34,16 @@ export interface ProgressEvent {
   data?: any;
   error?: string;
   stage?: 'prepare' | 'generating' | 'saving' | 'done'; // 当前阶段
+}
+
+/**
+ * 消费类型枚举
+ */
+export enum ConsumptionType {
+  RESUME_QUIZ = 'resume_quiz', // 简历押题
+  SPECIAL_INTERVIEW = 'special_interview', // 专项面试
+  BEHAVIOR_INTERVIEW = 'behavior_interview', // 行测+HR面试
+  AI_INTERVIEW = 'ai_interview', // AI模拟面试（如果使用次数计费）
 }
 
 /**
@@ -41,6 +65,12 @@ export class InterviewService {
     private sessionManager: SessionManager,
     private resumeAnalysisService: ResumeAnalysisService,
     private conversationContinuationService: ConversationContinuationService,
+    @InjectModel(ConsumptionRecord.name)
+    private consumptionRecordModel: Model<ConsumptionRecordDocument>,
+    @InjectModel(ResumeQuizResult.name)
+    private resumeQuizResultModel: Model<ResumeQuizResultDocument>,
+    @InjectModel(User.name)
+    private userModel: Model<UserDocument>,
   ) {}
 
   /**
@@ -167,8 +197,92 @@ export class InterviewService {
     dto: ResumeQuizDto,
     progressSubject?: Subject<ProgressEvent>,
   ): Promise<any> {
+    let consumptionRecord: any = null;
+    const recordId = uuidv4();
+    const resultId = uuidv4();
+    console.log('recordId', recordId);
+
     // 处理错误
     try {
+      // ========== 步骤 0: 幂等性检查 ==========
+      // ⚠️ 这是最关键的一步：防止重复生成
+      if (dto.requestId) {
+        // 在数据库中查询是否存在这个 requestId 的记录
+        const existingRecord = await this.consumptionRecordModel.findOne({
+          userId,
+          'metadata.requestId': dto.requestId,
+          status: {
+            $in: [ConsumptionStatus.SUCCESS, ConsumptionStatus.PENDING],
+          },
+        });
+
+        if (existingRecord) {
+          // 找到了相同 requestId 的记录！
+
+          if (existingRecord.status === ConsumptionStatus.SUCCESS) {
+            // 之前已经成功生成过，直接返回已有的结果
+            this.logger.log(
+              `重复请求，返回已有结果: requestId=${dto.requestId}`,
+            );
+
+            // 查询之前生成的结果
+            const existingResult = await this.resumeQuizResultModel.findOne({
+              resultId: existingRecord.resultId,
+            });
+
+            if (!existingResult) {
+              throw new BadRequestException('结果不存在');
+            }
+
+            // ✅ 直接返回，不再执行后续步骤，不再扣费
+            return {
+              resultId: existingResult.resultId,
+              questions: existingResult.questions,
+              summary: existingResult.summary,
+              remainingCount: await this.getRemainingCount(userId, 'resume'),
+              consumptionRecordId: existingRecord.recordId,
+              // ⭐ 重要：标记这是从缓存返回的结果
+              isFromCache: true,
+            };
+          }
+
+          if (existingRecord.status === ConsumptionStatus.PENDING) {
+            // 同一个请求还在处理中，告诉用户稍后查询
+            throw new BadRequestException('请求正在处理中，请稍后查询结果');
+          }
+        }
+      }
+
+      // ========== 步骤 1: 检查并扣除次数（原子操作）==========
+      // ⚠️ 注意：扣费后如果后续步骤失败，会在 catch 块中自动退款
+      // TODO：后续实现
+      this.logger.log(`✅ 用户扣费成功～～`);
+
+      // ========== 步骤 2: 创建消费记录（pending）==========
+      consumptionRecord = await this.consumptionRecordModel.create({
+        recordId,
+        user: new Types.ObjectId(userId),
+        userId,
+        type: ConsumptionType.RESUME_QUIZ,
+        status: ConsumptionStatus.PENDING,
+        consumedCount: 1,
+        description: `简历押题 - ${dto?.company} ${dto.positionName}`,
+        inputData: {
+          company: dto?.company || '',
+          positionName: dto.positionName,
+          minSalary: dto.minSalary,
+          maxSalary: dto.maxSalary,
+          jd: dto.jd,
+          resumeId: dto.resumeId,
+        },
+        resultId,
+        metadata: {
+          requestId: dto.requestId,
+          promptVersion: dto.promptVersion,
+        },
+        startedAt: new Date(),
+      });
+
       // 定义不同阶段的提示信息
       const progressMessages = [
         // 0-20%: 理解阶段
@@ -256,6 +370,31 @@ export class InterviewService {
         message: label,
         stage,
       });
+    }
+  }
+
+  /**
+   * 获取剩余次数
+   * resume： 简历押题
+   * special：专项面试
+   * behavior：HR + 行测面试
+   */
+  private async getRemainingCount(
+    userId: string,
+    type: 'resume' | 'special' | 'behavior',
+  ): Promise<number> {
+    const user = await this.userModel.findById(userId);
+    if (!user) return 0;
+
+    switch (type) {
+      case 'resume':
+        return user.resumeRemainingCount;
+      case 'special':
+        return user.specialRemainingCount;
+      case 'behavior':
+        return user.behaviorRemainingCount;
+      default:
+        return 0;
     }
   }
 }
