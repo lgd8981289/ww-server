@@ -98,6 +98,13 @@ export class ResumeQuizDto {
   requestId?: string;
 
   @ApiProperty({
+    description: '简历的线上地址',
+    required: false,
+  })
+  @IsOptional()
+  resumeURL?: string;
+
+  @ApiProperty({
     description: 'Prompt版本（用于A/B测试）',
     example: 'v2',
     required: false,

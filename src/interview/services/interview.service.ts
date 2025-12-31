@@ -9,7 +9,7 @@ import { Subject } from 'rxjs';
 import { ResumeQuizDto } from '../dto/resume-quiz.dto';
 import { v4 as uuidv4 } from 'uuid';
 import { ConsumptionStatus } from '../schemas/consumption-record.schema';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { User, UserDocument } from '../../user/schemas/user.schema';
 import { Model, Types } from 'mongoose';
@@ -21,6 +21,7 @@ import {
   ResumeQuizResult,
   ResumeQuizResultDocument,
 } from '../schemas/interview-quiz-result.schema';
+import { DocumentParserService } from './document-parser.service';
 
 /**
  * 进度事件
@@ -65,6 +66,7 @@ export class InterviewService {
     private sessionManager: SessionManager,
     private resumeAnalysisService: ResumeAnalysisService,
     private conversationContinuationService: ConversationContinuationService,
+    private documentParserService: DocumentParserService,
     @InjectModel(ConsumptionRecord.name)
     private consumptionRecordModel: Model<ConsumptionRecordDocument>,
     @InjectModel(ResumeQuizResult.name)
@@ -318,6 +320,12 @@ export class InterviewService {
         '📄 正在读取简历文档...',
         'prepare',
       );
+      this.logger.log(`📝 开始提取简历内容: resumeId=${dto.resumeId}`);
+      const resumeContent = await this.extractResumeContent(userId, dto);
+      this.logger.log(`✅ 简历内容提取成功: ${resumeContent}`);
+      this.logger.log(`✅ 简历内容提取成功: 长度=${resumeContent.length}字符`);
+
+      this.emitProgress(progressSubject, 5, '✅ 简历解析完成', 'prepare');
       // ========== 阶段 2: AI 生成阶段 - 分两步（10-90%）==========
       // ===== 第一步：生成押题部分（问题 + 综合评估）10-50% =====
       // ===== 第二步：生成匹配度分析部分，后续不在需要记录进度 =====
@@ -587,5 +595,96 @@ export class InterviewService {
         };
       }
     }, 1000);
+  }
+
+  /**
+   * 提取简历内容
+   * 支持三种方式：直接文本、结构化简历、上传文件
+   */
+  private async extractResumeContent(
+    userId: string,
+    dto: ResumeQuizDto,
+  ): Promise<string> {
+    // 优先级 1：如果直接提供了简历文本，使用它
+    if (dto.resumeContent) {
+      this.logger.log(
+        `✅ 使用直接提供的简历文本，长度=${dto.resumeContent.length}字符`,
+      );
+      return dto.resumeContent;
+    }
+
+    // 优先级 2：如果提供了 resumeId，尝试查询
+    // 之前 ResumeQuizDto 中没有创建 resumeURL 的属性，所以这里需要在 ResumeQuizDto 中补充以下 resumeURL
+    if (dto.resumeURL) {
+      try {
+        // 1. 从 URL 下载文件
+        const rawText = await this.documentParserService.parseDocumentFromUrl(
+          dto.resumeURL,
+        );
+
+        // 2. 清理文本（移除格式化符号等）
+        const cleanedText = this.documentParserService.cleanText(rawText);
+
+        // 3. 验证内容质量
+        const validation =
+          this.documentParserService.validateResumeContent(cleanedText);
+
+        if (!validation.isValid) {
+          throw new BadRequestException(validation.reason);
+        }
+
+        // 4. 记录任何警告
+        if (validation.warnings && validation.warnings.length > 0) {
+          this.logger.warn(`简历解析警告: ${validation.warnings.join('; ')}`);
+        }
+
+        // 5. 检查内容长度（避免超长内容）
+        const estimatedTokens =
+          this.documentParserService.estimateTokens(cleanedText);
+
+        if (estimatedTokens > 6000) {
+          this.logger.warn(
+            `简历内容过长: ${estimatedTokens} tokens，将进行截断`,
+          );
+          // 截取前 6000 tokens 对应的字符
+          const maxChars = 6000 * 1.5; // 约 9000 字符
+          const truncatedText = cleanedText.substring(0, maxChars);
+
+          this.logger.log(
+            `简历已截断: 原长度=${cleanedText.length}, ` +
+              `截断后=${truncatedText.length}, ` +
+              `tokens≈${this.documentParserService.estimateTokens(truncatedText)}`,
+          );
+
+          return truncatedText;
+        }
+
+        this.logger.log(
+          `✅ 简历解析成功: 长度=${cleanedText.length}字符, ` +
+            `tokens≈${estimatedTokens}`,
+        );
+
+        return cleanedText;
+      } catch (error) {
+        // 文件解析失败，返回友好的错误信息
+        if (error instanceof BadRequestException) {
+          throw error;
+        }
+
+        this.logger.error(
+          `❌ 解析简历文件失败: resumeId=${dto.resumeId}, error=${error.message}`,
+          error.stack,
+        );
+
+        throw new BadRequestException(
+          `简历文件解析失败: ${error.message}。` +
+            `建议：确保上传的是文本型 PDF 或 DOCX 文件，未加密且未损坏。` +
+            `或者直接粘贴简历文本。`,
+        );
+      }
+    }
+
+    // 都没提供，返回错误
+    throw new BadRequestException('请提供简历URL或简历内容');
   }
 }
