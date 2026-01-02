@@ -21,7 +21,7 @@ export const FORMAT_INSTRUCTIONS_QUESTIONS_ONLY = `
 
 ⚠️ 注意事项：
 1. 确保返回有效的JSON格式，不要包含注释
-2. questions数组长度为10-12
+2. questions数组长度为3-5
 3. 每个答案200-300字
 4. summary 150-200字
 5. 不要包含任何JSON之外的文本

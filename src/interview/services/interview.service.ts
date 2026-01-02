@@ -468,9 +468,8 @@ export class InterviewService {
       this.emitProgress(
         progressSubject,
         100,
-        '✅ 所有分析完成，正在保存结果...',
+        `✅ 所有分析完成，正在保存结果...响应数据为${JSON.stringify(result)}`,
       );
-
       return result;
     } catch (error) {
       this.logger.error(

@@ -11,7 +11,6 @@ import {
   FORMAT_INSTRUCTIONS_ANALYSIS_ONLY,
 } from '../prompts/format-instructions.prompts';
 import { AIModelFactory } from '../../ai/services/ai-model.factory';
-
 /**
  * 简历押题输入
  */
@@ -147,17 +146,12 @@ export class InterviewAIService {
 
       // 5. 调用 AI
       const rawResult = await chain.invoke(params);
+      this.logger.log(`🔍 [押题部分] 原始结果: ${rawResult}`);
 
       // 6. 验证结果
       // 虽然我们还没有 Zod 验证（下节课才加），但我们可以做基本检查
       if (!Array.isArray(rawResult.questions)) {
         throw new Error('AI返回的结果中 questions 不是数组');
-      }
-
-      if (rawResult.questions.length < 10) {
-        throw new Error(
-          `AI返回的问题数量不足: ${rawResult.questions.length}（应至少10个）`,
-        );
       }
 
       const duration = Date.now() - startTime;
