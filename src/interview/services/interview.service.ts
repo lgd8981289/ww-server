@@ -343,6 +343,9 @@ export class InterviewService {
         15,
         '🤖 AI 正在理解您的简历内容并生成面试问题...',
       );
+
+      this.getStagePrompt(progressSubject);
+
       // ===== 第一步：生成押题部分（问题 + 综合评估）10-50% =====
       const questionsResult =
         await this.aiService.generateResumeQuizQuestionsOnly({
@@ -661,26 +664,29 @@ export class InterviewService {
     // 模拟一个定时器：每间隔一秒，响应一次数据
     let progress = 0;
     let currentMessage = progressMessages[0];
-    const interval = setInterval(() => {
-      progress += 1;
-      currentMessage = progressMessages[progress];
-      // 发送进度事件
-      this.emitProgress(
-        progressSubject,
-        progress,
-        currentMessage.message,
-        'generating',
-      );
-      // 简单处理，到了 progressMessages 的 length 就结束了
-      if (progress === progressMessages.length - 1) {
-        clearInterval(interval);
-        this.emitProgress(progressSubject, 100, 'AI 已完成问题生成', 'done');
-        return {
-          questions: [],
-          analysis: [],
-        };
-      }
-    }, 1000);
+    const interval = setInterval(
+      () => {
+        progress += 1;
+        currentMessage = progressMessages[progress];
+        // 发送进度事件
+        this.emitProgress(
+          progressSubject,
+          progress,
+          currentMessage.message,
+          'generating',
+        );
+        // 简单处理，到了 progressMessages 的 length 就结束了
+        if (progress === progressMessages.length - 1) {
+          clearInterval(interval);
+          this.emitProgress(progressSubject, 100, 'AI 已完成问题生成', 'done');
+          return {
+            questions: [],
+            analysis: [],
+          };
+        }
+      },
+      Math.floor(Math.random() * (2000 - 800 + 1)) + 800, // 每 0.8-2 秒更新一次
+    );
   }
 
   /**
