@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import * as bcrypt from 'bcryptjs';
 
 // 定义 UserDocument 类型，表示 User 类的实例加上 Mongoose 的 Document 类型，这样我们就可以在代码中使用 UserDocument 来表示数据库中的用户文档。
 export type UserDocument = User & Document;
@@ -106,3 +107,25 @@ export class User {
 
 // SchemaFactory.createForClass() 方法会根据 User 类自动生成 Mongoose 模式，并且会根据 @Prop() 装饰器的配置来设置字段属性。
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// TODO: 保存前先加密密码
+UserSchema.pre('save', async function () {
+  // pre('save') 中的 this 指向当前文档实例，因此我们可以直接访问 this.password 来获取用户输入的密码。
+  // 如果密码没有被修改，则直接跳过加密过程
+  if (!this.isModified('password')) {
+    return;
+  }
+
+  // 如果密码存在，则进行加密
+  const salt = await bcrypt.genSalt(10); // 生成盐
+  if (this.password) {
+    this.password = await bcrypt.hash(this.password, salt);
+  }
+});
+
+// TODO: 比较输入的密码和数据库中的哈希密码
+UserSchema.methods.comparePassword = async function (
+  candidatePassword: string,
+) {
+  return bcrypt.compare(candidatePassword, this.password);
+};
