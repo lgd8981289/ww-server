@@ -1,9 +1,13 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { HydratedDocument } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 
 // 定义 UserDocument 类型，表示 User 类的实例加上 Mongoose 的 Document 类型，这样我们就可以在代码中使用 UserDocument 来表示数据库中的用户文档。
-export type UserDocument = User & Document;
+export interface UserMethods {
+  comparePassword(candidatePassword: string): Promise<boolean>;
+}
+
+export type UserDocument = HydratedDocument<User, UserMethods>;
 
 @Schema({ timestamps: true }) // 添加时间戳
 export class User {
@@ -17,7 +21,7 @@ export class User {
   @Prop({ default: false }) // 默认账户状态为未激活
   isActive: boolean; // 账户是否激活
 
-  @Prop() // 可选字段，允许用户不设置密码
+  @Prop()
   password?: string; // 密码
 
   @Prop({ required: false }) // 可选字段，允许用户不设置邮箱

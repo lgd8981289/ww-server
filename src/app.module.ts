@@ -14,7 +14,6 @@ import { InterviewModule } from './interview/interview.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { JwtStrategy } from './auth/jwt.strategy';
-import { getTokenExpirationSeconds } from './common/utils/jwt.util';
 
 @Module({
   imports: [
@@ -42,7 +41,8 @@ import { getTokenExpirationSeconds } from './common/utils/jwt.util';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
-        const expirationSeconds = getTokenExpirationSeconds();
+        const expirationSeconds =
+          configService.get<string>('JWT_EXPIRES_IN') || '7d';
         return {
           // 从环境变量中获取 JWT 密钥，如果没有则使用默认值
           secret: configService.get<string>('JWT_SECRET') || 'wwzhidao-secret',
