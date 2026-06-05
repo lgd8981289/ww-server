@@ -18,28 +18,46 @@ import { getTokenExpirationSeconds } from './common/utils/jwt.util';
 
 @Module({
   imports: [
+    // 加载环境变量配置
     ConfigModule.forRoot({
       envFilePath: '.env.development',
       isGlobal: true,
     }),
-    MongooseModule.forRoot(
-      process.env.MONGODB_URI || 'mongodb://localhost:27017/wwzhidao',
-    ),
-    PassportModule,
+
+    // 连接 MongoDB 数据库
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => {
+        return {
+          // 从环境变量中获取 MongoDB 连接 URI，如果没有则使用默认值
+          uri:
+            configService.get<string>('MONGODB_URI') ||
+            'mongodb://localhost:27017/wwzhidao',
+        };
+      },
+      inject: [ConfigService],
+    }),
+
+    // 配置 JWT 模块
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => {
+      useFactory: (configService: ConfigService) => {
         const expirationSeconds = getTokenExpirationSeconds();
         return {
+          // 从环境变量中获取 JWT 密钥，如果没有则使用默认值
           secret: configService.get<string>('JWT_SECRET') || 'wwzhidao-secret',
+
+          // 设置 JWT 过期时间，单位为秒
           signOptions: {
             expiresIn: expirationSeconds,
           },
         };
       },
       inject: [ConfigService],
-      global: true,
+      global: true, // 将 JWT 模块设置为全局模块，这样在其他模块中就不需要再次导入 JwtModule 了
     }),
+
+    PassportModule,
     UserModule,
     WechatModule,
     PaymentModule,
