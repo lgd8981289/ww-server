@@ -1,5 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { ExecutionContext, Injectable } from '@nestjs/common';
+import {
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
@@ -28,5 +33,13 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     }
     // 否则，我们就调用父类的 canActivate 方法来执行正常的 JWT 认证流程。
     return super.canActivate(context);
+  }
+
+  // 当认证失败时，我们抛出一个 UnauthorizedException 异常，并将认证失败的错误信息作为异常消息返回给客户端。
+  handleRequest<TUser = any>(err: any, user: any, info: Error): TUser {
+    if (err || !user) {
+      throw new UnauthorizedException(info?.message || '认证失败');
+    }
+    return user;
   }
 }
