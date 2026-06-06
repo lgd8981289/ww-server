@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -74,5 +75,16 @@ export class UserService {
     const result = user.toObject();
     delete result.password; // 删除密码字段以保护用户隐私
     return { token, user: result };
+  }
+
+  // TODO: 获取用户信息服务：根据用户ID从数据库中查询用户信息，并返回给客户端。
+  async getUserInfo(userId: string): Promise<any> {
+    const user = await this.userModel.findById(userId).lean(); // 使用 lean() 方法将 Mongoose 文档转换为普通 JavaScript 对象，这样我们就可以直接删除密码字段。
+    if (!user) {
+      throw new NotFoundException('用户不存在');
+    }
+
+    delete user.password; // 删除密码字段以保护用户隐私
+    return user;
   }
 }
